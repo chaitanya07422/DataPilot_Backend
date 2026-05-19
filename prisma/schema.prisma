@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  datasets      Dataset[]
+  conversations AIConversation[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Dataset {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  uploadedFiles UploadedFile[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("datasets")
+}
+
+model UploadedFile {
+  id          String   @id @default(uuid()) @db.Uuid
+  filename    String
+  mimeType    String?  @map("mime_type")
+  size        Int?
+  storagePath String?  @map("storage_path")
+  datasetId   String   @map("dataset_id") @db.Uuid
+  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([datasetId])
+  @@map("uploaded_files")
+}
+
+model AIConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String?
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  queries AIQuery[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ai_conversations")
+}
+
+model AIQuery {
+  id             String         @id @default(uuid()) @db.Uuid
+  prompt         String         @db.Text
+  response       String?        @db.Text
+  conversationId String         @map("conversation_id") @db.Uuid
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("ai_queries")
+}
