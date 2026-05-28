@@ -37,18 +37,29 @@ model Dataset {
   @@map("datasets")
 }
 
+enum ProcessingStatus {
+  pending
+  processing
+  indexed
+  failed
+}
+
 model UploadedFile {
-  id          String   @id @default(uuid()) @db.Uuid
-  filename    String
-  mimeType    String?  @map("mime_type")
-  size        Int?
-  storagePath String?  @map("storage_path")
-  datasetId   String   @map("dataset_id") @db.Uuid
-  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               String           @id @default(uuid()) @db.Uuid
+  filename         String
+  mimeType         String?          @map("mime_type")
+  size             Int?
+  storagePath      String?          @map("storage_path")
+  processingStatus ProcessingStatus @default(pending) @map("processing_status")
+  errorMessage     String?          @map("error_message") @db.Text
+  chunkCount       Int?             @map("chunk_count")
+  datasetId        String           @map("dataset_id") @db.Uuid
+  dataset          Dataset          @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   @@index([datasetId])
+  @@index([processingStatus])
   @@map("uploaded_files")
 }
 

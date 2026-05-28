@@ -69,6 +69,9 @@ services:
       REDIS_PORT: 6379
       QDRANT_URL: http://qdrant:6333
       CORS_ORIGIN: http://localhost:3000
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
     ports:
       - "3001:3001"
     depends_on:
@@ -107,8 +110,15 @@ services:
       DATABASE_URL: postgresql://datapilot:datapilot@postgres:5432/datapilot?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      QDRANT_URL: http://qdrant:6333
+      UPLOAD_DIR: /app/uploads
+      EMBEDDING_PROVIDER: local
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     networks:
       - datapilot-net
@@ -132,6 +142,7 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  uploads_data:
 
 networks:
   datapilot-net:
