@@ -1,8 +1,40 @@
 # DataPilot Backend
 
-API and infrastructure for **DataPilot AI** — an AI-native data intelligence platform.
+API, job processing, and infrastructure for **DataPilot AI**.
 
-> **Note:** This repo contains foundational scaffolding only. Endpoints return placeholder responses until business logic is implemented.
+## What's implemented
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Health checks | Live | Liveness + Postgres/Redis readiness |
+| Datasets CRUD (list, create, get) | Live | Scoped to `DEV_USER_ID` |
+| Multipart file upload | Live | Local disk (`UPLOAD_DIR`) |
+| BullMQ job queue | Live | Queue: `data-processing` |
+| Bull Board dashboard | Live | http://localhost:3001/admin/queues |
+| Document pipeline | Live | PDF, TXT, MD → parse → chunk → embed → Qdrant |
+| Tabular pipeline | Live | CSV, XLSX → parse → clean → Postgres rows → embed → Qdrant |
+| Auto-clean on upload | Live | Default cleaning profile applied |
+| Manual re-clean | Live | `POST .../clean` with `CleaningOptions` |
+| Cleaning reports | Live | Stored in `cleaning_reports` |
+| Local embeddings | Live | `@xenova/transformers` (384-dim MiniLM) |
+| Users module | Placeholder | Returns empty placeholder JSON |
+| AI module | Placeholder | Conversations / query stubs |
+| Reports module | Placeholder | List / get stubs |
+| Authentication | Not started | Single dev user from seed |
+
+### Processing pipeline
+
+```
+Upload (API) → save file + Postgres record → enqueue BullMQ job
+     ↓
+Worker:
+  Tabular (CSV/XLSX): parse → clean → persist FileSheet/FileRow → chunk text → embed → Qdrant
+  Documents (PDF/TXT/MD): extract text → chunk → embed → Qdrant
+     ↓
+UploadedFile.processingStatus = indexed | failed
+```
+
+---
 
 ## Stack
 
@@ -10,30 +42,26 @@ API and infrastructure for **DataPilot AI** — an AI-native data intelligence p
 |------------|---------|
 | Node.js + TypeScript | Runtime |
 | Fastify | HTTP API |
-| Prisma + PostgreSQL | Relational data (SQL) |
+| Prisma + PostgreSQL | Relational data (datasets, files, rows, reports) |
 | Redis + BullMQ | Job queues |
-| Qdrant | Vector store (placeholder) |
-| Docker Compose | Local infrastructure |
-
----
-
-## Deployment note
-
-There is **no reverse proxy** in this repo. Locally, the frontend (`:3000`) and API (`:3001`) run as separate services. In production, route traffic at **GCP** (Cloud Load Balancing, Cloud Run custom domains, API Gateway, etc.).
+| Qdrant | Vector store for document chunks |
+| `@xenova/transformers` | Local embedding model |
+| Bull Board | Queue monitoring UI |
+| Docker Compose | Local Postgres, Redis, Qdrant |
 
 ---
 
 ## Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running)
-- Node.js 22+ (for local API / Prisma Studio)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for infra)
+- Node.js 22+
 - npm
 
 ---
 
 ## Setup
 
-### Option A — Full stack with Docker (recommended)
+### Option A — Docker full stack
 
 ```bash
 cd datapilot-backend
@@ -41,152 +69,115 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Wait until containers are healthy, then verify:
+> Docker images may lag behind local `npm run dev` code. For latest features, use Option B.
+
+### Option B — Local API + worker (recommended for development)
 
 ```bash
-curl http://localhost:3001/api/health
-```
-
-### Option B — Local API + Docker infrastructure
-
-Use this when you want hot reload on the API and worker.
-
-```bash
-# 1. Start databases & queues only
+# 1. Infrastructure only
 docker compose up postgres redis qdrant -d
 
-# 2. Configure environment
+# 2. Environment
 cp .env.example .env
-# .env already uses localhost — required for Prisma Studio & npm run dev
 
 # 3. Install & migrate
 npm install
-npm run prisma:generate
 npm run prisma:migrate
+npm run prisma:seed
 
 # 4. Terminal 1 — API
 npm run dev
 
-# 5. Terminal 2 — BullMQ worker
+# 5. Terminal 2 — worker (required for uploads)
 npm run dev:worker
 ```
 
-### Port conflicts
+Verify:
 
-If `6379` or `6333` are already in use on your machine, `docker-compose.yml` maps:
+```bash
+curl http://localhost:3001/api/health
+open http://localhost:3001/admin/queues
+```
+
+### Port mapping (host)
 
 | Service | Host port |
 |---------|-----------|
-| Redis | **6380** |
-| Qdrant | **6335** (REST), **6336** (gRPC) |
+| API | 3001 |
+| PostgreSQL | 5432 |
+| Redis | **6380** (not 6379) |
+| Qdrant REST | **6335** (not 6333) |
+| Qdrant gRPC | 6336 |
 
-Update `.env` accordingly (`REDIS_PORT=6380`, `QDRANT_URL=http://localhost:6335`).
+Set in `.env`: `REDIS_PORT=6380`, `QDRANT_URL=http://localhost:6335`.
 
 ---
 
 ## Service URLs
 
-| Service | URL | Notes |
-|---------|-----|-------|
-| **API** | http://localhost:3001 | Fastify — base path `/api` |
-| **PostgreSQL** | `localhost:5432` | User/pass/db: `datapilot` |
-| **Prisma Studio** | http://localhost:5555 | Run `npm run prisma:studio` |
-| **Redis** | `localhost:6380` | Host-mapped port |
-| **Qdrant dashboard** | http://localhost:6335/dashboard | Web UI |
-| **Frontend (Docker)** | http://localhost:3000 | From sibling repo build |
-
-### Database connection string
-
-```
-postgresql://datapilot:datapilot@localhost:5432/datapilot?schema=public
-```
-
-Inside Docker containers, Compose overrides `DATABASE_URL` to use hostname `postgres`.
+| Service | URL |
+|---------|-----|
+| API | http://localhost:3001/api |
+| Bull Board | http://localhost:3001/admin/queues |
+| Prisma Studio | http://localhost:5555 (`npm run prisma:studio`) |
+| Qdrant UI | http://localhost:6335/dashboard |
+| PostgreSQL | `postgresql://datapilot:datapilot@localhost:5432/datapilot` |
 
 ---
 
-## API Endpoints
+## API endpoints
 
-Base URL (local): `http://localhost:3001/api`
-
-> **Production (GCP):** Use your GCP load balancer / ingress URL. No reverse proxy is bundled in this repo.
-
-All module routes currently return placeholder JSON, e.g.:
-
-```json
-{ "data": [], "message": "Dataset module placeholder" }
-```
+Base: `http://localhost:3001/api`
 
 ### Health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Liveness — API is up |
-| `GET` | `/api/health/ready` | Readiness — checks Postgres + Redis |
-
-**Example — liveness**
-
-```bash
-curl http://localhost:3001/api/health
-```
-
-```json
-{
-  "status": "ok",
-  "service": "datapilot-backend",
-  "timestamp": "2026-05-19T15:46:55.801Z"
-}
-```
-
-**Example — readiness**
-
-```bash
-curl http://localhost:3001/api/health/ready
-```
-
-```json
-{
-  "status": "ready",
-  "checks": { "database": "ok", "redis": "ok" },
-  "timestamp": "2026-05-19T15:46:55.824Z"
-}
-```
-
-### Users
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/users` | List users (placeholder) |
-| `GET` | `/api/users/:id` | Get user by ID (placeholder) |
+| `GET` | `/health` | Liveness |
+| `GET` | `/health/ready` | Postgres + Redis checks |
 
 ### Datasets
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/datasets` | List datasets (placeholder) |
-| `GET` | `/api/datasets/:id` | Get dataset by ID (placeholder) |
+| `GET` | `/datasets` | List datasets for dev user |
+| `POST` | `/datasets` | Create dataset `{ name, description? }` |
+| `GET` | `/datasets/:id` | Dataset with uploaded files |
+| `GET` | `/datasets/:id/files/:fileId/headers` | Column headers |
+| `GET` | `/datasets/:id/files/:fileId/rows?offset&limit` | Paginated cleaned rows (max 500) |
+| `GET` | `/datasets/:id/files/:fileId/cleaning-report` | Latest cleaning report |
+| `POST` | `/datasets/:id/files/:fileId/clean` | Re-clean from original file |
+
+**Re-clean body** (`CleaningOptions`):
+
+```json
+{
+  "trimCells": true,
+  "normalizeHeaders": true,
+  "removeEmptyRows": true,
+  "removeDuplicateRows": true,
+  "duplicateKeyColumns": ["email"]
+}
+```
 
 ### Uploads
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/uploads` | List uploads (placeholder) |
-| `POST` | `/api/uploads` | Create upload (placeholder) |
+| `GET` | `/uploads?datasetId=` | List uploads (optional filter) |
+| `GET` | `/uploads/:id` | Single upload record |
+| `POST` | `/uploads` | Multipart: fields `datasetId`, file part |
 
-### AI
+Supported file types: **PDF, CSV, XLS, XLSX, TXT, MD**.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/ai/conversations` | List conversations (placeholder) |
-| `POST` | `/api/ai/conversations` | Create conversation (placeholder) |
-| `POST` | `/api/ai/query` | Submit AI query (placeholder) |
+### Users / AI / Reports (placeholders)
 
-### Reports
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/reports` | List reports (placeholder) |
-| `GET` | `/api/reports/:id` | Get report by ID (placeholder) |
+| Method | Path |
+|--------|------|
+| `GET` | `/users`, `/users/:id` |
+| `GET` | `/ai/conversations` |
+| `POST` | `/ai/conversations`, `/ai/query` |
+| `GET` | `/reports`, `/reports/:id` |
 
 ---
 
@@ -194,17 +185,19 @@ curl http://localhost:3001/api/health/ready
 
 Copy `.env.example` to `.env`:
 
-| Variable | Description | Local default |
-|----------|-------------|---------------|
-| `NODE_ENV` | Environment | `development` |
-| `PORT` | API port | `3001` |
-| `HOST` | Bind address | `0.0.0.0` |
-| `LOG_LEVEL` | Pino log level | `info` |
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `DATABASE_URL` | Postgres connection | `localhost:5432` |
-| `REDIS_HOST` | Redis host | `localhost` |
-| `REDIS_PORT` | Redis port | `6380` |
-| `QDRANT_URL` | Qdrant HTTP URL | `http://localhost:6335` |
-| `CORS_ORIGIN` | Allowed frontend origin | `http://localhost:3000` |
+| `REDIS_HOST` / `REDIS_PORT` | BullMQ | `localhost` / `6380` |
+| `QDRANT_URL` | Vector DB | `http://localhost:6335` |
+| `QDRANT_COLLECTION` | Collection name | `datapilot_documents` |
+| `CORS_ORIGIN` | Frontend origin | `http://localhost:3000` |
+| `UPLOAD_DIR` | Local file storage | `./uploads` |
+| `MAX_UPLOAD_BYTES` | Upload limit | `20971520` (20 MB) |
+| `LOCAL_EMBEDDING_MODEL` | Transformers model | `Xenova/all-MiniLM-L6-v2` |
+| `DEV_USER_ID` | Dev user for unauthenticated API | seed UUID |
+| `BULL_BOARD_ENABLED` | Queue dashboard | `true` |
+| `BULL_BOARD_PATH` | Dashboard path | `/admin/queues` |
 
 ---
 
@@ -212,27 +205,41 @@ Copy `.env.example` to `.env`:
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start API with hot reload |
-| `npm run dev:worker` | Start BullMQ worker with hot reload |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm start` | Run compiled API |
-| `npm run worker` | Run compiled worker |
-| `npm run prisma:generate` | Generate Prisma Client |
-| `npm run prisma:migrate` | Apply migrations (dev) |
-| `npm run prisma:studio` | Open Prisma Studio UI |
+| `npm run dev` | API with hot reload |
+| `npm run dev:worker` | Worker with hot reload |
+| `npm run build` | Compile TypeScript |
+| `npm start` / `npm run worker` | Production API / worker |
+| `npm run prisma:migrate` | Apply migrations |
+| `npm run prisma:seed` | Dev user + Default Dataset |
+| `npm run prisma:studio` | DB browser |
 
 ---
 
-## Job processing
+## Job processing & Bull Board
 
-```
-API (Fastify)  →  BullMQ queue (Redis)  →  Node worker
-   enqueue           data-processing          process job
-```
-
-- Queue name: `data-processing`
-- Worker entry: `src/worker.ts`
+- Queue: **`data-processing`**
+- Worker: `src/worker.ts`
 - Processor: `src/workers/processors/data-processing.processor.ts`
+- Dashboard: **http://localhost:3001/admin/queues** (disable with `BULL_BOARD_ENABLED=false`)
+
+---
+
+## Database models (Prisma)
+
+| Model | Purpose |
+|-------|---------|
+| `User` | Platform users |
+| `Dataset` | File collections |
+| `UploadedFile` | Upload metadata + `processingStatus`, row/chunk counts |
+| `FileSheet` | Tabular headers + cleaning config |
+| `FileRow` | Cleaned row JSON |
+| `CleaningReport` | Per-clean stats and config snapshot |
+| `AIConversation` / `AIQuery` | Schema only (AI not wired) |
+
+Seed creates:
+
+- User: `dev@datapilot.local` (`DEV_USER_ID`)
+- Dataset: **Default Dataset** (`00000000-0000-4000-8000-000000000002`)
 
 ---
 
@@ -240,79 +247,74 @@ API (Fastify)  →  BullMQ queue (Redis)  →  Node worker
 
 ```
 src/
-├── server.ts              # API entry
-├── worker.ts              # BullMQ worker entry
-├── app.ts                 # Fastify factory
-├── config/                # env, logger, queue
-├── plugins/               # prisma, redis, bullmq
-├── routes/                # health + registration
+├── server.ts / worker.ts
+├── app.ts
+├── config/env.ts
+├── plugins/          # prisma, redis, bullmq, bull-board
 ├── modules/
-│   ├── users/
-│   ├── datasets/
-│   ├── uploads/
-│   ├── ai/
-│   └── reports/
-├── services/              # qdrant placeholder
-└── workers/
-    └── processors/
-prisma/
-├── schema.prisma
-└── migrations/
+│   ├── datasets/     # CRUD + rows + cleaning
+│   ├── uploads/      # multipart upload
+│   ├── users/        # placeholder
+│   ├── ai/           # placeholder
+│   └── reports/      # placeholder
+├── services/
+│   ├── parsing/      # PDF/text + tabular (papaparse, xlsx)
+│   ├── cleaning/     # sheet-cleaner
+│   ├── tabular/      # persist cleaned rows
+│   ├── chunking/
+│   ├── embeddings/   # local Xenova provider
+│   └── qdrant.service.ts
+└── workers/processors/
+prisma/schema.prisma
 docker-compose.yml
 ```
 
 ---
 
-## Database models (Prisma)
+## Troubleshooting
 
-| Model | Description |
-|-------|-------------|
-| `User` | Platform users |
-| `Dataset` | Data collections (belongs to user) |
-| `UploadedFile` | Files linked to a dataset |
-| `AIConversation` | Chat sessions (belongs to user) |
-| `AIQuery` | Messages in a conversation |
+### `uv_interface_addresses` crash on `npm run dev`
 
-Tables are created via `prisma migrate` on startup (Docker) or `npm run prisma:migrate` (local).
+Fastify crashes after startup when `HOST=0.0.0.0` because it calls `os.networkInterfaces()`. Common on Node 25 in Cursor/sandboxed terminals.
+
+**Fix:** use `HOST=127.0.0.1` in `.env` (default in `.env.example`). Docker Compose still sets `HOST=0.0.0.0` inside containers. Local dev also auto-maps `0.0.0.0` → `127.0.0.1` in `server.ts`.
+
+### Upload stuck on pending
+
+Run `npm run dev:worker`. Inspect jobs at `/admin/queues`.
+
+### Prisma Studio can't connect
+
+Use `localhost` in `DATABASE_URL`, not Docker hostname `postgres`.
+
+### Qdrant version warning
+
+Client may log a version mismatch with the Docker Qdrant image — usually non-fatal. Align image tag or set `checkCompatibility: false` if needed.
+
+### Migration / column errors
+
+If tabular migration partially applied, run `npm run prisma:migrate` or inspect `prisma/migrations/`. Re-seed after migrate: `npm run prisma:seed`.
+
+### Port 3001 in use
+
+Stop Docker `datapilot-backend` container when running local `npm run dev`.
 
 ---
 
-## Troubleshooting
+## Pending (backend)
 
-### Prisma Studio: "Unable to run script"
-
-Ensure `.env` uses **`localhost`**, not `postgres`:
-
-```
-DATABASE_URL=postgresql://datapilot:datapilot@localhost:5432/datapilot?schema=public
-```
-
-Then restart: `npm run prisma:studio`
-
-### Docker: port already allocated
-
-Another project may be using 6379 or 6333. Use the mapped ports in `docker-compose.yml` (6380, 6335) or stop conflicting containers:
-
-```bash
-docker ps
-```
-
-### API not reachable
-
-```bash
-docker compose ps
-docker compose logs backend
-curl http://localhost:3001/api/health
-```
-
-### Stop all services
-
-```bash
-docker compose down
-```
+- **Authentication** and multi-tenant dataset access
+- **AI / RAG** — query endpoint using Qdrant retrieval + LLM
+- **Reports** module — exports, scheduled reports
+- **Users** module — real CRUD
+- **OpenAI embeddings** — env vars exist in some setups; code currently uses local provider only
+- **Multi-sheet Excel** — select sheet on upload/view
+- **S3 / cloud storage** — replace local `UPLOAD_DIR` for production
+- **Reconcile Docker images** with latest source
+- **Qdrant collection migration** when changing embedding dimensions
 
 ---
 
 ## Related repo
 
-Frontend (separate git repo): [`datapilot-frontend`](../datapilot-frontend) — sibling folder, push independently to GitHub.
+Frontend: [`datapilot-frontend`](../datapilot-frontend)

@@ -7,6 +7,6 @@ export const QUEUE_NAMES = {
 export const redisConnection = {
   host: env.redis.host,
   port: env.redis.port,
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: null,
   connectTimeout: 10_000,
 };

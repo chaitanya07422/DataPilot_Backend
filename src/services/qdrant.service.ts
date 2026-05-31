@@ -47,6 +47,10 @@ export class QdrantService {
     chunks: { index: number; text: string }[],
     vectors: number[][],
   ): Promise<void> {
+    if (chunks.length === 0) {
+      return;
+    }
+
     if (chunks.length !== vectors.length) {
       throw new Error("Chunk count must match vector count");
     }

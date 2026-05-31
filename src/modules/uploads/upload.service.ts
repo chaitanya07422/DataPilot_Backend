@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ProcessingStatus } from "@prisma/client";
-import type { UploadFilePayload } from "./upload.types.js";
 import type { Queue } from "bullmq";
 import { env } from "../../config/env.js";
 import {
@@ -9,6 +8,7 @@ import {
 } from "../../services/parsing/file-parser.js";
 import { saveUploadFile } from "../../services/storage/local-storage.js";
 import type { PrismaClient } from "../../types/database.js";
+import type { UploadFilePayload } from "./upload.types.js";
 
 export class UploadService {
   constructor(
@@ -74,7 +74,7 @@ export class UploadService {
         { datasetId, fileId: record.id },
         { removeOnComplete: 100, removeOnFail: 50 },
       );
-    } catch (queueError) {
+    } catch {
       await this.prisma.uploadedFile.update({
         where: { id: record.id },
         data: {
@@ -115,6 +115,9 @@ export type UploadedFileResponse = {
   processingStatus: ProcessingStatus;
   errorMessage: string | null;
   chunkCount: number | null;
+  rowCount: number | null;
+  cleanedRowCount: number | null;
+  sheetName: string | null;
   datasetId: string;
   createdAt: Date;
   updatedAt: Date;

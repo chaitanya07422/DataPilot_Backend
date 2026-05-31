@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import prismaPlugin from "./plugins/prisma.js";
 import redisPlugin from "./plugins/redis.js";
 import bullmqPlugin from "./plugins/bullmq.js";
+import bullBoardPlugin from "./plugins/bull-board.js";
 import { registerRoutes } from "./routes/index.js";
 
 export async function buildApp() {
@@ -18,13 +19,17 @@ export async function buildApp() {
   await ensureUploadRoot();
 
   await app.register(cors, { origin: env.corsOrigin });
-  await app.register(helmet);
+  await app.register(helmet, {
+    // Bull Board serves inline scripts/styles on /admin/queues
+    contentSecurityPolicy: false,
+  });
   await app.register(multipart, {
     limits: { fileSize: env.maxUploadBytes },
   });
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(bullmqPlugin);
+  await app.register(bullBoardPlugin);
   await app.register(registerRoutes);
 
   return app;

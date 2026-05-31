@@ -32,4 +32,6 @@ export const env = {
     ? Number(process.env.OPENAI_EMBEDDING_DIMENSIONS)
     : undefined,
   devUserId: process.env.DEV_USER_ID ?? "00000000-0000-4000-8000-000000000001",
+  bullBoardEnabled: process.env.BULL_BOARD_ENABLED !== "false",
+  bullBoardPath: process.env.BULL_BOARD_PATH ?? "/admin/queues",
 } as const;
