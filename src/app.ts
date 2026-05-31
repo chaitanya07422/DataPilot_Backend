@@ -11,6 +11,11 @@ import bullmqPlugin from "./plugins/bullmq.js";
 import bullBoardPlugin from "./plugins/bull-board.js";
 import { registerRoutes } from "./routes/index.js";
 
+function isBullBoardPath(url: string): boolean {
+  const path = url.split("?")[0] ?? "";
+  return path === env.bullBoardPath || path.startsWith(`${env.bullBoardPath}/`);
+}
+
 export async function buildApp() {
   const app = Fastify({
     loggerInstance: logger,
@@ -19,9 +24,10 @@ export async function buildApp() {
   await ensureUploadRoot();
 
   await app.register(cors, { origin: env.corsOrigin });
-  await app.register(helmet, {
-    // Bull Board serves inline scripts/styles on /admin/queues
-    contentSecurityPolicy: false,
+  await app.register(helmet, { global: false });
+  app.addHook("onRequest", async (request, reply) => {
+    const relaxCsp = env.bullBoardEnabled && isBullBoardPath(request.url);
+    await reply.helmet(relaxCsp ? { contentSecurityPolicy: false } : {});
   });
   await app.register(multipart, {
     limits: { fileSize: env.maxUploadBytes },
