@@ -23,7 +23,7 @@ export const DEFAULT_CLEANING_OPTIONS: CleaningOptions = {
 
 export function cleanSheet(
   headers: string[],
-  rows: Record<string, unknown>[],
+  rows: unknown[][],
   options: CleaningOptions = DEFAULT_CLEANING_OPTIONS,
 ): { headers: string[]; rows: Record<string, unknown>[]; report: CleaningReportData } {
   const originalRowCount = rows.length;
@@ -37,9 +37,7 @@ export function cleanSheet(
   let workingRows = rows.map((row) => {
     const mapped: Record<string, unknown> = {};
     for (let i = 0; i < normalizedHeaders.length; i++) {
-      const header = normalizedHeaders[i]!;
-      const rawKey = headers[i] ?? header;
-      mapped[header] = row[rawKey] ?? row[header] ?? null;
+      mapped[normalizedHeaders[i]!] = row[i] ?? null;
     }
     return mapped;
   });

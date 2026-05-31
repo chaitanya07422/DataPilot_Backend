@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 export type ParsedSheet = {
   sheetName: string | null;
   headers: string[];
-  rows: Record<string, unknown>[];
+  rows: unknown[][];
 };
 
 const TABULAR_MIME_TYPES = new Set([
@@ -61,7 +61,7 @@ function parseCsv(content: string): ParsedSheet {
   }
 
   const headerRow = data[0]!.map((cell, i) => String(cell ?? "").trim() || `column_${i + 1}`);
-  const rows = data.slice(1).map((row) => rowToObject(headerRow, row));
+  const rows = data.slice(1).map((row) => normalizeRow(headerRow.length, row));
 
   if (rows.length === 0) {
     throw new Error("CSV file has headers but no data rows");
@@ -96,7 +96,7 @@ function parseExcel(buffer: Buffer): ParsedSheet {
   const rows = raw
     .slice(1)
     .filter((row) => Array.isArray(row) && row.some((cell) => !isBlank(cell)))
-    .map((row) => rowToObject(headerRow, row as unknown[]));
+    .map((row) => normalizeRow(headerRow.length, row as unknown[]));
 
   if (rows.length === 0) {
     throw new Error("Excel sheet has headers but no data rows");
@@ -105,12 +105,13 @@ function parseExcel(buffer: Buffer): ParsedSheet {
   return { sheetName, headers: headerRow, rows };
 }
 
-function rowToObject(headers: string[], row: unknown[]): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  for (let i = 0; i < headers.length; i++) {
-    obj[headers[i]!] = row[i] ?? null;
+/** Preserve one value per column index; duplicate header names must not collapse cells. */
+function normalizeRow(columnCount: number, row: unknown[]): unknown[] {
+  const values: unknown[] = [];
+  for (let i = 0; i < columnCount; i++) {
+    values.push(row[i] ?? null);
   }
-  return obj;
+  return values;
 }
 
 function isBlank(value: unknown): boolean {
